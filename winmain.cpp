@@ -25,9 +25,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 // グローバル変数
 //*****************************************************************************
 int g_Mode;
+int g_TimerCount;				//タイマーのカウント
 float g_PositionX, g_PositionY;	//変位（座標）
 float g_VelocityX, g_VelocityY;	//速度
 float g_AccelX, g_AccelY;		//加速度
+
+
+void InitUniformMotion();						 // 等速運動の初期化
+void UpdateUniformMotion(float dt);				 // 等速運動の更新
+void InitUniformlyAcceleratedMotion();           // 等加速度運動の初期化
+void UpdateUniformlyAcceleratedMotion(float dt); // 等加速度運動の更新
+void InitFreeFall();							 // 自由落下の初期化
+void UpdateFreeFall(float dt);					 // 自由落下の更新
+void InitVerticalThrow();						 // 鉛直投げ上げの初期化
+void UpdateVerticalThrow(float dt);				 // 鉛直投げ上げの更新
+void InitHorizontalProjection();				 // 水平投射の初期化
+void UpdateHorizontalProjection(float dt);		 // 水平投射の更新
+void InitObliqueProjection();					 // 斜方投射の初期化
+void UpdateObliqueProjection(float dt);			 // 斜方投射の更新
 
 
 //=============================================================================
@@ -138,31 +153,54 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case WM_CREATE:
+		g_Mode = 0;      
+		g_TimerCount = 0; 
 
-		g_Mode = 0;
-		g_PositionX = 0.0f;
-		g_PositionY = 100.0f;
-		g_VelocityX = 0.0f;
-		g_VelocityY = 0.0f;
-		g_AccelX = 0.0f;
-		g_AccelY = 0.0f;
+		InitUniformMotion(); 
 
 		SetTimer(hWnd, 1, 100, NULL);
 		break;
 
 	case WM_TIMER://更新
 	{
-		float dt = 0.1f;//微少時間（経過時間）
+		float dt = 0.1f;//経過時間
 
-		//ここに動かす処理を記述
+		
+		switch (g_Mode) {
+		case 0: UpdateUniformMotion(dt); break;              // 等速運動
+		case 1: UpdateUniformlyAcceleratedMotion(dt); break; // 等加速度運動
+		case 2: UpdateFreeFall(dt); break;                   // 自由落下
+		case 3: UpdateVerticalThrow(dt); break;              // 鉛直投げ上げ
+		case 4: UpdateHorizontalProjection(dt); break;       // 水平投射
+		case 5: UpdateObliqueProjection(dt); break;          // 斜方投射
+		}
 
+		
+		g_TimerCount++;
 
+		
+		if (g_TimerCount >= 50) {
+			g_TimerCount = 0; // カウンターをリセット
+			g_Mode++;      
 
+			if (g_Mode > 5) {
+				g_Mode = 0;  
+			}
+
+			
+			switch (g_Mode) {
+			case 0: InitUniformMotion(); break;
+			case 1: InitUniformlyAcceleratedMotion(); break;
+			case 2: InitFreeFall(); break;
+			case 3: InitVerticalThrow(); break;
+			case 4: InitHorizontalProjection(); break;
+			case 5: InitObliqueProjection(); break;
+			}
+		}
 
 		InvalidateRect(hWnd, NULL, true);//画面再描画
 		break;
 	}
-
 
 	case WM_PAINT://描画
 		HDC hDC;
@@ -196,4 +234,90 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	}
 
 	return 0;
+}
+
+// 重力加速度の定義
+const float GRAVITY = 98.0f;
+
+
+// ----------------------------------------------------
+// 1. 等速運動 (一定の速度で進む。加速度0)
+// ----------------------------------------------------
+void InitUniformMotion() {
+	g_PositionX = 0.0f;  g_PositionY = 100.0f; 
+	g_VelocityX = 50.0f; g_VelocityY = 0.0f;   
+	g_AccelX = 0.0f;  g_AccelY = 0.0f;  
+}
+void UpdateUniformMotion(float dt) {
+	g_PositionX += g_VelocityX * dt; 
+	g_PositionY += g_VelocityY * dt;
+}
+
+// ----------------------------------------------------
+// 2. 等加速度運動
+// ----------------------------------------------------
+void InitUniformlyAcceleratedMotion() {
+	g_PositionX = 0.0f;  g_PositionY = 200.0f;
+	g_VelocityX = 0.0f;  g_VelocityY = 0.0f;  
+	g_AccelX = 20.0f; g_AccelY = 0.0f;  
+}
+void UpdateUniformlyAcceleratedMotion(float dt) {
+	g_VelocityX += g_AccelX * dt;   
+	g_PositionX += g_VelocityX * dt; 
+}
+
+// ----------------------------------------------------
+// 3. 自由落下運動 (初速0で下に落ちる)
+// ----------------------------------------------------
+void InitFreeFall() {
+	g_PositionX = 480.0f; g_PositionY = 0.0f; 
+	g_VelocityX = 0.0f;   g_VelocityY = 0.0f;  
+	g_AccelX = 0.0f;   g_AccelY = GRAVITY;
+}
+void UpdateFreeFall(float dt) {
+	g_VelocityY += g_AccelY * dt;
+	g_PositionY += g_VelocityY * dt;
+}
+
+// ----------------------------------------------------
+// 4. 鉛直投げ上げ (真上に投げ、重力で落ちてくる)
+// ----------------------------------------------------
+void InitVerticalThrow() {
+	g_PositionX = 480.0f; g_PositionY = 500.0f; 
+	g_VelocityX = 0.0f;   g_VelocityY = -250.0f;
+	g_AccelX = 0.0f;   g_AccelY = GRAVITY; 
+}
+void UpdateVerticalThrow(float dt) {
+	g_VelocityY += g_AccelY * dt;
+	g_PositionY += g_VelocityY * dt;
+}
+
+// ----------------------------------------------------
+// 5. 水平投射 (真横に投げ、重力で落ちていく)
+// ----------------------------------------------------
+void InitHorizontalProjection() {
+	g_PositionX = 0.0f;   g_PositionY = 0.0f;  
+	g_VelocityX = 100.0f; g_VelocityY = 0.0f;  
+	g_AccelX = 0.0f;   g_AccelY = GRAVITY; 
+}
+void UpdateHorizontalProjection(float dt) {
+	g_VelocityX += g_AccelX * dt; 
+	g_VelocityY += g_AccelY * dt;
+	g_PositionX += g_VelocityX * dt;
+	g_PositionY += g_VelocityY * dt;
+}
+
+// ----------------------------------------------------
+// 6. 斜方投射 (斜め上に投げ、放物線を描いて落ちる)
+// ----------------------------------------------------
+void InitObliqueProjection() {
+	g_PositionX = 0.0f;   g_PositionY = 500.0f; 
+	g_VelocityX = 120.0f; g_VelocityY = -250.0f;
+	g_AccelX = 0.0f;   g_AccelY = GRAVITY;  
+}
+void UpdateObliqueProjection(float dt) {
+	g_VelocityX += g_AccelX * dt;
+	g_VelocityY += g_AccelY * dt;
+	g_PositionX += g_VelocityX * dt;
+	g_PositionY += g_VelocityY * dt;
 }
