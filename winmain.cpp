@@ -6,6 +6,7 @@
 
 #include <Windows.h>
 #include <stdio.h> // sprintf_sを使うために必要
+#include <math.h>  // sqrtを使うために必要
 
 //*****************************************************************************
 // マクロ定義
@@ -22,6 +23,17 @@
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 //*****************************************************************************
+// 構造体の定義
+//*****************************************************************************
+// 物理演算用の物体データ
+struct PhysicsObject {
+	float x, y;       // 位置（座標）
+	float vx, vy;     // 速度
+	float mass;       // 質量
+	float radius;     // 半径
+};
+
+//*****************************************************************************
 // グローバル変数
 //*****************************************************************************
 int g_Mode;
@@ -30,6 +42,8 @@ float g_PositionX, g_PositionY;	//変位（座標）
 float g_VelocityX, g_VelocityY;	//速度
 float g_AccelX, g_AccelY;		//加速度
 
+PhysicsObject g_Obj1; // 左から飛んでくる物体（赤）
+PhysicsObject g_Obj2; // 静止している物体（青）
 
 void InitUniformMotion();						 // 等速運動の初期化
 void UpdateUniformMotion(float dt);				 // 等速運動の更新
@@ -43,6 +57,8 @@ void InitHorizontalProjection();				 // 水平投射の初期化
 void UpdateHorizontalProjection(float dt);		 // 水平投射の更新
 void InitObliqueProjection();					 // 斜方投射の初期化
 void UpdateObliqueProjection(float dt);			 // 斜方投射の更新
+void InitCollision();							 // 衝突シミュレーションの初期化
+void UpdateCollision(float dt);					 // 衝突シミュレーションの更新
 
 
 //=============================================================================
@@ -153,10 +169,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case WM_CREATE:
+		InitCollision();
 		g_Mode = 0;      
 		g_TimerCount = 0; 
 
-		InitUniformMotion(); 
+		//InitUniformMotion(); 
 
 		SetTimer(hWnd, 1, 100, NULL);
 		break;
@@ -165,7 +182,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	{
 		float dt = 0.1f;//経過時間
 
-		
+		UpdateCollision(dt);
+
+		// 右の物体が画面外へ出たら、最初の状態にリセットしてループさせる
+		if (g_Obj2.x - g_Obj2.radius > SCREEN_WIDTH + 50.0f) 
+		{
+			InitCollision();
+		}
+		/*
 		switch (g_Mode) {
 		case 0: UpdateUniformMotion(dt); break;              // 等速運動
 		case 1: UpdateUniformlyAcceleratedMotion(dt); break; // 等加速度運動
@@ -197,6 +221,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			case 5: InitObliqueProjection(); break;
 			}
 		}
+		*/
 
 		InvalidateRect(hWnd, NULL, true);//画面再描画
 		break;
@@ -205,12 +230,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	case WM_PAINT://描画
 		HDC hDC;
 		PAINTSTRUCT  ps;
-		HPEN hPen0, hOldPen;
+		HPEN hPenRed, hOldPen, hPenBlue;
 
 		hDC = BeginPaint(hWnd, &ps);
-
-		hPen0 = CreatePen(PS_SOLID, 1, RGB(255, 0, 0));
-		hOldPen = (HPEN)SelectObject(hDC, hPen0);
 
 		//MoveToEx(hDC, g_PositionX, g_PositionY, NULL);
 		//LineTo(hDC, 100, 100);
@@ -220,8 +242,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					(int)(g_PositionX + 20.0f),
 					(int)(g_PositionY + 20.0f));//楕円描画
 
+		// --- 物体1（飛んでくる方）を赤色で描画 ---
+		hPenRed = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
+		hOldPen = (HPEN)SelectObject(hDC, hPenRed);
+
+		Ellipse(hDC, (int)(g_Obj1.x - g_Obj1.radius),
+			(int)(g_Obj1.y - g_Obj1.radius),
+			(int)(g_Obj1.x + g_Obj1.radius),
+			(int)(g_Obj1.y + g_Obj1.radius));
+
+		// --- 物体2（静止している方）を青色で描画 ---
+		hPenBlue = CreatePen(PS_SOLID, 2, RGB(0, 0, 255));
+		SelectObject(hDC, hPenBlue);
+
+		Ellipse(hDC, (int)(g_Obj2.x - g_Obj2.radius),
+			(int)(g_Obj2.y - g_Obj2.radius),
+			(int)(g_Obj2.x + g_Obj2.radius),
+			(int)(g_Obj2.y + g_Obj2.radius));
+
+		// ペンの後始末
 		SelectObject(hDC, hOldPen);
-		DeleteObject(hPen0);
+		DeleteObject(hPenRed);
+		DeleteObject(hPenBlue);
+		//DeleteObject(hPen0);
 
 		EndPaint(hWnd, &ps);
 
@@ -320,4 +363,64 @@ void UpdateObliqueProjection(float dt) {
 	g_VelocityY += g_AccelY * dt;
 	g_PositionX += g_VelocityX * dt;
 	g_PositionY += g_VelocityY * dt;
+}
+
+// ----------------------------------------------------
+// 衝突シミュレーションの初期化
+// ----------------------------------------------------
+void InitCollision() {
+	// 物体1：左から飛んでくる物体（赤）
+	g_Obj1.x = 50.0f;           // 初期X座標（左端）
+	g_Obj1.y = 270.0f;          // 初期Y座標（画面中央の高さ）
+	g_Obj1.vx = 250.0f;         // 右向きの速度
+	g_Obj1.vy = 0.0f;           // Y方向の速度は0
+	g_Obj1.mass = 1.0f;         // 質量
+	g_Obj1.radius = 30.0f;      // 半径
+
+	// 物体2：静止している物体（青）
+	g_Obj2.x = 480.0f;          // 初期X座標（画面中央付近）
+	g_Obj2.y = 270.0f;          // 初期Y座標（同じ高さ）
+	g_Obj2.vx = 0.0f;           // 静止しているため速度0
+	g_Obj2.vy = 0.0f;
+	g_Obj2.mass = 1.0f;         // 質量（物体1と同じ質量）
+	g_Obj2.radius = 30.0f;      // 半径
+}
+
+// ----------------------------------------------------
+// 衝突シミュレーションの更新
+// ----------------------------------------------------
+void UpdateCollision(float dt) {
+	// 1. 等速直線運動による位置の更新
+	g_Obj1.x += g_Obj1.vx * dt;
+	g_Obj2.x += g_Obj2.vx * dt;
+
+	// 2. 円同士の衝突判定
+	// 中心間の距離の2乗を求める（X軸のみの移動ですが、汎用的な円の当たり判定を使用）
+	float dx = g_Obj2.x - g_Obj1.x;
+	float dy = g_Obj2.y - g_Obj1.y;
+	float distSq = dx * dx + dy * dy;
+	float radiusSum = g_Obj1.radius + g_Obj2.radius; // 半径の合計
+
+	// 中心距離が半径の合計以下になったら衝突したとみなす
+	if (distSq <= radiusSum * radiusSum) {
+
+		// めり込み（重なり）を解消して正しい位置に補正する処理
+		float dist = sqrt(distSq);
+		float overlap = radiusSum - dist; // めり込んでいる距離
+		// 質量等に関わらず、とりあえず半分ずつ押し返して重なりを無くす
+		g_Obj1.x -= overlap / 2.0f;
+		g_Obj2.x += overlap / 2.0f;
+
+
+		// 3. 完全弾性衝突（反発係数 e=1）による速度・エネルギーの計算
+		// 運動量保存則と反発係数の式から導かれた1次元衝突の公式を使用
+		float m1 = g_Obj1.mass;
+		float m2 = g_Obj2.mass;
+		float v1 = g_Obj1.vx;
+		float v2 = g_Obj2.vx;
+
+		// 公式に当てはめて衝突後の速度を上書きする
+		g_Obj1.vx = ((m1 - m2) * v1 + 2.0f * m2 * v2) / (m1 + m2);
+		g_Obj2.vx = ((m2 - m1) * v2 + 2.0f * m1 * v1) / (m1 + m2);
+	}
 }
