@@ -59,6 +59,8 @@ void InitObliqueProjection();					 // 斜方投射の初期化
 void UpdateObliqueProjection(float dt);			 // 斜方投射の更新
 void InitCollision();							 // 衝突シミュレーションの初期化
 void UpdateCollision(float dt);					 // 衝突シミュレーションの更新
+void DrawBezier(HDC hDC, float x0, float y0, float x1, float y1, float x2, float y2, float x3, float y3); // ベジェ曲線を描く関数
+
 
 
 //=============================================================================
@@ -230,13 +232,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	case WM_PAINT://描画
 		HDC hDC;
 		PAINTSTRUCT  ps;
-		HPEN hPenRed, hOldPen, hPenBlue;
+		HPEN hPenRed, hOldPen, hPenBlue, hPenBezier;
 
 		hDC = BeginPaint(hWnd, &ps);
 
 		//MoveToEx(hDC, g_PositionX, g_PositionY, NULL);
 		//LineTo(hDC, 100, 100);
 
+		
+		hPenBezier = CreatePen(PS_SOLID, 3, RGB(0, 200, 0)); // 緑色で太さ3のペン
+		hOldPen = (HPEN)SelectObject(hDC, hPenBezier);
+
+		// 始点(100, 400), 制御点1(200, 100), 制御点2(400, 100), 終点(500, 400)
+		DrawBezier(hDC, 100.0f, 400.0f, 200.0f, 100.0f, 400.0f, 100.0f, 500.0f, 400.0f);
+
+		/*
 		Ellipse(hDC, (int)(g_PositionX - 20.0f),
 					(int)(g_PositionY - 20.0f),
 					(int)(g_PositionX + 20.0f),
@@ -259,11 +269,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			(int)(g_Obj2.y - g_Obj2.radius),
 			(int)(g_Obj2.x + g_Obj2.radius),
 			(int)(g_Obj2.y + g_Obj2.radius));
+			*/
 
 		// ペンの後始末
 		SelectObject(hDC, hOldPen);
-		DeleteObject(hPenRed);
-		DeleteObject(hPenBlue);
+		//DeleteObject(hPenRed);
+		//DeleteObject(hPenBlue);
+		DeleteObject(hPenBezier);
 		//DeleteObject(hPen0);
 
 		EndPaint(hWnd, &ps);
@@ -422,5 +434,25 @@ void UpdateCollision(float dt) {
 		// 公式に当てはめて衝突後の速度を上書きする
 		g_Obj1.vx = ((m1 - m2) * v1 + 2.0f * m2 * v2) / (m1 + m2);
 		g_Obj2.vx = ((m2 - m1) * v2 + 2.0f * m1 * v1) / (m1 + m2);
+	}
+}
+
+void DrawBezier(HDC hDC, float x0, float y0, float x1, float y1, float x2, float y2, float x3, float y3) {
+	int segments = 50; // 分割数（大きいほど滑らかになります）
+
+	// 描画開始位置を始点にセット
+	MoveToEx(hDC, (int)x0, (int)y0, NULL);
+
+	// tを 0.0 から 1.0 まで少しずつ増やしながら座標を計算
+	for (int i = 1; i <= segments; i++) {
+		float t = (float)i / segments;
+		float mt = 1.0f - t; // (1 - t)
+
+		// 3次ベジェ曲線の公式
+		float px = (mt * mt * mt * x0) + (3.0f * mt * mt * t * x1) + (3.0f * mt * t * t * x2) + (t * t * t * x3);
+		float py = (mt * mt * mt * y0) + (3.0f * mt * mt * t * y1) + (3.0f * mt * t * t * y2) + (t * t * t * y3);
+
+		// 計算した座標へ線を引く
+		LineTo(hDC, (int)px, (int)py);
 	}
 }
